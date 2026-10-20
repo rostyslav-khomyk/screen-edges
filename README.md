@@ -29,9 +29,9 @@ The service has to run in your logged-in session. Screen capture is not availabl
 ./scripts/uninstall.sh
 ```
 
-`install.sh` builds a release binary, writes `~/Library/Application Support/ScreenEdges/config.json` with a token, and loads a LaunchAgent.
+`install.sh` builds a release app, writes `~/Library/Application Support/ScreenEdges/config.json` with a token, and loads a LaunchAgent for the logged-in session.
 
-The first launch needs Screen Recording permission for `screen-edges`.
+The first launch needs Screen Recording permission for **Screen Edges**. System Settings, Privacy & Security, Screen Recording. The listeners stay up and retry the capture until that permission is on.
 
 A package is optional:
 

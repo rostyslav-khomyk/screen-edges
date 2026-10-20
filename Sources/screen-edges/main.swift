@@ -6,7 +6,7 @@ import ScreenEdgesCore
 
 @main
 struct ScreenEdgesMain {
-    static func main() async {
+    static func main() {
         let configURL = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? defaultConfigPath())
         let config: DaemonConfig
         do {
@@ -16,12 +16,15 @@ struct ScreenEdgesMain {
             exit(1)
         }
         let app = Daemon(config: config)
-        do {
-            try await app.run()
-        } catch {
-            fputs("\(error)\n", stderr)
-            exit(1)
+        Task {
+            do {
+                try await app.run()
+            } catch {
+                fputs("\(error)\n", stderr)
+                exit(1)
+            }
         }
+        dispatchMain()
     }
 }
 
@@ -50,7 +53,14 @@ final class Daemon: @unchecked Sendable {
         start(ws, websocket: true)
         start(tcp, websocket: false)
         fputs("Hyperion WebSocket \(config.websocketPort), JSON \(config.jsonPort)\n", stderr)
-        try await captureLoop()
+        while true {
+            do {
+                try await captureLoop()
+            } catch {
+                fputs("capture: \(error). Grant Screen Recording to Screen Edges, then it retries.\n", stderr)
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
     }
 
     private func start(_ listener: NWListener, websocket: Bool) {
@@ -162,10 +172,7 @@ final class Daemon: @unchecked Sendable {
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: streamConfig)
             let rgb = rgbBuffer(image)
             colors = sampleEdges(rgb.bytes, width: rgb.width, height: rgb.height)
-            let snapshot = colors
-            DispatchQueue.main.async { [weak self] in
-                self?.broadcast(snapshot)
-            }
+            broadcast(colors)
             try await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
         }
     }
@@ -197,6 +204,8 @@ private func rgbBuffer(_ image: CGImage) -> (bytes: [UInt8], width: Int, height:
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) {
+            ctx.translateBy(x: 0, y: CGFloat(height))
+            ctx.scaleBy(x: 1, y: -1)
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
     }

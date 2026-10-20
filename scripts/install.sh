@@ -4,8 +4,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 swift build -c release --package-path "$ROOT"
 APP_DIR="$HOME/Library/Application Support/ScreenEdges"
 mkdir -p "$APP_DIR"
-cp "$ROOT/.build/release/screen-edges" "$APP_DIR/screen-edges"
-chmod 755 "$APP_DIR/screen-edges"
+APP="$APP_DIR/ScreenEdges.app"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS"
+cp "$ROOT/.build/release/screen-edges" "$APP/Contents/MacOS/screen-edges"
+cp "$ROOT/scripts/Info.plist" "$APP/Contents/Info.plist"
+chmod 755 "$APP/Contents/MacOS/screen-edges"
+codesign --force --sign - "$APP"
 CONFIG="$APP_DIR/config.json"
 if [[ ! -f "$CONFIG" ]]; then
   TOKEN="$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -32,17 +37,24 @@ cat > "$PLIST" <<EOF
   <string>com.rostyslavkhomyk.screen-edges</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$APP_DIR/screen-edges</string>
+    <string>$APP/Contents/MacOS/screen-edges</string>
     <string>$CONFIG</string>
   </array>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>StandardErrorPath</key>
+  <string>$APP_DIR/screen-edges.log</string>
+  <key>StandardOutPath</key>
+  <string>$APP_DIR/screen-edges.log</string>
 </dict>
 </plist>
 EOF
 launchctl bootout "gui/$UID_NUM/com.rostyslavkhomyk.screen-edges" 2>/dev/null || true
+sleep 1
 launchctl bootstrap "gui/$UID_NUM" "$PLIST"
 launchctl enable "gui/$UID_NUM/com.rostyslavkhomyk.screen-edges"
 echo "Installed. Grant Screen Recording to screen-edges if macOS asks."
