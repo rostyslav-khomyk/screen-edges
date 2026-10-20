@@ -75,12 +75,7 @@ cat > "$PLIST" <<EOF
   <string>com.rostyslavkhomyk.screen-edges</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/open</string>
-    <string>-W</string>
-    <string>-g</string>
-    <string>-n</string>
-    <string>$APP</string>
-    <string>--args</string>
+    <string>$APP/Contents/MacOS/screen-edges</string>
     <string>$CONFIG</string>
   </array>
   <key>AssociatedBundleIdentifiers</key>
