@@ -55,11 +55,24 @@ final class Daemon: @unchecked Sendable {
         fputs("Hyperion WebSocket \(config.websocketPort), JSON \(config.jsonPort)\n", stderr)
         while true {
             do {
+                try await waitForScreenRecording()
                 try await captureLoop()
             } catch {
-                fputs("capture: \(error). Grant Screen Recording to Screen Edges, then it retries.\n", stderr)
-                try await Task.sleep(nanoseconds: 2_000_000_000)
+                fputs("capture: \(error)\n", stderr)
+                try await Task.sleep(nanoseconds: 5_000_000_000)
             }
+        }
+    }
+
+    /// Asks once. A denied answer does not open the dialog again.
+    private func waitForScreenRecording() async throws {
+        if CGPreflightScreenCaptureAccess() { return }
+        fputs("Allow Screen Recording for Screen Edges. macOS calls that switch screen and audio.\n", stderr)
+        await MainActor.run {
+            _ = CGRequestScreenCaptureAccess()
+        }
+        while !CGPreflightScreenCaptureAccess() {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
         }
     }
 
@@ -166,6 +179,7 @@ final class Daemon: @unchecked Sendable {
         streamConfig.width = 160
         streamConfig.height = max(1, Int((Double(display.height) / Double(display.width) * 160).rounded()))
         streamConfig.showsCursor = false
+        streamConfig.capturesAudio = false
         streamConfig.queueDepth = 1
         let interval = max(0.05, config.interval)
         while true {

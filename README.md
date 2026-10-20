@@ -29,9 +29,9 @@ The service has to run in your logged-in session. Screen capture is not availabl
 ./scripts/uninstall.sh
 ```
 
-`install.sh` builds a release app, writes `~/Library/Application Support/ScreenEdges/config.json` with a token, and loads a LaunchAgent for the logged-in session.
+`install.sh` builds a release app at `/Applications/ScreenEdges.app`, writes `~/Library/Application Support/ScreenEdges/config.json` with a token, and loads a LaunchAgent for the logged-in session. The app is signed with a local certificate named Screen Edges Local, so later rebuilds keep the same permission.
 
-The first launch needs Screen Recording permission for **Screen Edges**. System Settings, Privacy & Security, Screen Recording. The listeners stay up and retry the capture until that permission is on.
+macOS asks once for Screen & System Audio Recording. That is the screen-capture switch. Screen Edges does not record the microphone or system audio. Allow **Screen Edges** and the dialog stays closed. The color listeners keep running while you answer.
 
 A package is optional:
 
