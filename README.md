@@ -2,10 +2,10 @@
 
 Menu-bar Mac app that samples the four edges of the widest display and drives **standard Home Assistant light entities** (Battletron zone lights from the localtuya fork).
 
-No Hyperion. Protocol is the native Home Assistant WebSocket API (`call_service` → `light.turn_on` with `rgb_color`).
+No Hyperion. Protocol is the native Home Assistant **REST** API (`POST /api/services/light/turn_on` with `rgb_color`). REST is used instead of the WebSocket so large `/api/states` replies do not hit “Message too long”.
 
 ```
-Screen Edges  --HA WebSocket-->  light.zone_*  -->  localtuya UDP zones  -->  Battletron strip
+Screen Edges  --HA REST-->  light.zone_*  -->  localtuya UDP zones  -->  Battletron strip
 ```
 
 Those zone lights are normal HA lights, so HomeKit (HomeBridge), Matterbridge, Google Home, and scripts can use the same entities.

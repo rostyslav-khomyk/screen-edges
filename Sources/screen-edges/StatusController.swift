@@ -74,7 +74,8 @@ final class StatusController: NSObject, ObservableObject {
             let window = NSWindow(contentViewController: hosting)
             window.title = "Screen Edges"
             window.styleMask = [.titled, .closable]
-            window.setContentSize(NSSize(width: 520, height: 480))
+            window.setContentSize(NSSize(width: 620, height: 580))
+            window.minSize = NSSize(width: 520, height: 480)
             window.center()
             settingsWindow = window
         }
@@ -101,12 +102,15 @@ final class StatusController: NSObject, ObservableObject {
     }
 
     func bootstrap() async {
-        guard !config.haToken.isEmpty else {
-            statusText = "Set HA URL and token in Settings"
+        let token = config.haToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            statusText = "Paste a HA access token, then Connect"
             return
         }
+        statusText = "Connecting…"
+        lastError = nil
         do {
-            try await client.connect(urlString: config.haURL, token: config.haToken)
+            try await client.connect(urlString: config.haURL, token: token)
             lights = try await client.listLights(localtuyaOnly: config.localtuyaOnly)
             statusText = "Connected — \(lights.count) lights"
             lastError = nil
@@ -116,6 +120,7 @@ final class StatusController: NSObject, ObservableObject {
         } catch {
             statusText = "Connection failed"
             lastError = error.localizedDescription
+            lights = []
         }
     }
 
@@ -125,13 +130,17 @@ final class StatusController: NSObject, ObservableObject {
     }
 
     func refreshLights() async {
+        let token = config.haToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return }
         do {
             if await !client.isConnected {
-                try await client.connect(urlString: config.haURL, token: config.haToken)
+                try await client.connect(urlString: config.haURL, token: token)
             }
             lights = try await client.listLights(localtuyaOnly: config.localtuyaOnly)
+            statusText = "Connected — \(lights.count) lights"
             lastError = nil
         } catch {
+            statusText = "Connection failed"
             lastError = error.localizedDescription
         }
     }
