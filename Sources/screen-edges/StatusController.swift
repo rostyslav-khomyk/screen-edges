@@ -31,7 +31,24 @@ final class StatusController: NSObject, ObservableObject {
             button.image?.isTemplate = true
         }
         rebuildMenu()
+        fileLog("Screen Edges starting (HA REST → zone lights)")
         Task { await bootstrap() }
+    }
+
+    private func fileLog(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let url = AppConfig.defaultURL()
+            .deletingLastPathComponent()
+            .appendingPathComponent("screen-edges.log")
+        if FileManager.default.fileExists(atPath: url.path),
+           let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: url)
+        }
     }
 
     private func rebuildMenu() {
@@ -85,7 +102,18 @@ final class StatusController: NSObject, ObservableObject {
 
     @objc private func quit() {
         Task {
-            await stopLoop()
+            // If sync is enabled, LaunchAgent will restart us — do not turn the
+            // strips off or a relaunch leaves everything dark until the next push.
+            loopTask?.cancel()
+            loopTask = nil
+            if !config.enabled {
+                for edge in EdgeName.allCases {
+                    let id = config.edges.entity(for: edge)
+                    if !id.isEmpty {
+                        try? await client.turnOff(entityId: id)
+                    }
+                }
+            }
             await client.disconnect()
             NSApp.terminate(nil)
         }
@@ -105,6 +133,7 @@ final class StatusController: NSObject, ObservableObject {
         let token = config.haToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
             statusText = "Paste a HA access token, then Connect"
+            fileLog("No HA token in config")
             return
         }
         statusText = "Connecting…"
@@ -114,6 +143,7 @@ final class StatusController: NSObject, ObservableObject {
             lights = try await client.listLights(localtuyaOnly: config.localtuyaOnly)
             statusText = "Connected — \(lights.count) lights"
             lastError = nil
+            fileLog("Connected to \(config.haURL) — \(lights.count) lights, enabled=\(config.enabled)")
             if config.enabled {
                 await startLoop()
             }
@@ -121,6 +151,7 @@ final class StatusController: NSObject, ObservableObject {
             statusText = "Connection failed"
             lastError = error.localizedDescription
             lights = []
+            fileLog("Connection failed: \(error.localizedDescription)")
         }
     }
 
@@ -147,8 +178,10 @@ final class StatusController: NSObject, ObservableObject {
 
     private func startLoop() async {
         loopTask?.cancel()
+        lastSent.removeAll()
         loopTask = Task { await runCaptureLoop() }
         statusText = "Syncing"
+        fileLog("Sync loop started")
         rebuildMenu()
     }
 
@@ -168,8 +201,15 @@ final class StatusController: NSObject, ObservableObject {
 
     private func runCaptureLoop() async {
         if !CGPreflightScreenCaptureAccess() {
+            fileLog("Screen Recording permission missing — requesting")
             _ = CGRequestScreenCaptureAccess()
+            if !CGPreflightScreenCaptureAccess() {
+                statusText = "Allow Screen Recording"
+                lastError = "System Settings → Privacy → Screen Recording → enable Screen Edges, then Start sync again"
+                fileLog(lastError!)
+            }
         }
+        var pushes = 0
         while !Task.isCancelled {
             guard config.enabled else { break }
             do {
@@ -179,11 +219,18 @@ final class StatusController: NSObject, ObservableObject {
                 let frame = try await captureEdgeFrame()
                 let colors = sampleEdges(frame.bytes, width: frame.width, height: frame.height)
                 try await push(colors)
+                pushes += 1
+                if pushes == 1 || pushes % 40 == 0 {
+                    fileLog(
+                        "push #\(pushes) L=\(colors.left) T=\(colors.top) R=\(colors.right) B=\(colors.bottom)"
+                    )
+                }
                 statusText = "Syncing"
                 lastError = nil
             } catch {
                 lastError = error.localizedDescription
                 statusText = "Error"
+                fileLog("sync error: \(error.localizedDescription)")
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
             let interval = max(0.08, config.interval)
@@ -192,14 +239,12 @@ final class StatusController: NSObject, ObservableObject {
     }
 
     private func push(_ colors: EdgeColors) async throws {
-        // Capture bitmap Y is inverted vs the physical screen (confirmed with the
-        // red/green/blue/yellow test pattern: screen bottom lit monitor zone 2).
-        // Swap top↔bottom here so mappings match what the user sees.
+        // Monitor L/T/R already match the screen with direct mapping.
         let pairs: [(EdgeName, RGB)] = [
             (.left, colors.left),
-            (.top, colors.bottom),
+            (.top, colors.top),
             (.right, colors.right),
-            (.bottom, colors.top),
+            (.bottom, colors.bottom),
         ]
         // Serial updates — parallel turn_on races the localtuya zone painter.
         for (edge, rgb) in pairs {
