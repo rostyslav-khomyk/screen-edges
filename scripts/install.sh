@@ -124,5 +124,5 @@ EOF
 sleep 1
 launchctl bootstrap "gui/$UID_NUM" "$PLIST"
 launchctl enable "gui/$UID_NUM/com.rostyslavkhomyk.screen-edges"
-echo "Installed. Grant Screen Recording to screen-edges if macOS asks."
-echo "WebSocket ws://127.0.0.1:8090  JSON tcp://127.0.0.1:19444"
+echo "Installed. Grant Screen Recording to Screen Edges if macOS asks."
+echo "Menu bar → Settings… → paste a HA long-lived token and map zone lights."
