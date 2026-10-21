@@ -63,13 +63,19 @@ public func sampleEdges(_ rgb: [UInt8], width: Int, height: Int) -> EdgeColors {
 public func lift(_ rgb: RGB) -> RGB {
     let maxChannel = max(rgb.r, rgb.g, rgb.b)
     if maxChannel < 12 { return RGB(0, 0, 0) }
-    let scaled = [rgb.r, rgb.g, rgb.b].map { Int((Double($0) * 255 / Double(maxChannel)).rounded()) }
-    let scaledMin = scaled.min() ?? 0
-    let span = 255 - scaledMin
-    if span < 25 { return RGB(255, 255, 255) }
-    let floor = Int((Double(scaledMin) * 0.2).rounded())
-    let out = scaled.map { channel in
-        Int((Double(floor) + Double(channel - scaledMin) * Double(255 - floor) / Double(span)).rounded())
+    // A dark desktop is gray. Stretching that to full white floods the strip.
+    // Dim colors get a limited boost. Gray stays gray. A real hue still gets punched.
+    let gain = max(1.0, min(2.5, 160.0 / Double(maxChannel)))
+    let boosted = [rgb.r, rgb.g, rgb.b].map { min(255, Int((Double($0) * gain).rounded())) }
+    let high = boosted.max() ?? 0
+    let low = boosted.min() ?? 0
+    if high - low < 18 {
+        return RGB(boosted[0], boosted[1], boosted[2])
+    }
+    let span = high - low
+    let floor = low / 5
+    let out = boosted.map { channel in
+        floor + (channel - low) * (255 - floor) / span
     }
     return RGB(out[0], out[1], out[2])
 }

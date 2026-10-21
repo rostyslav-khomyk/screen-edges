@@ -3,7 +3,9 @@ set -euo pipefail
 
 ensure_signing_identity() {
   local name="Screen Edges Local"
-  if security find-identity -v -p codesigning | grep -q "$name"; then
+  # find-identity stays empty for this login-keychain cert, but the cert is
+  # already there. Importing again makes the name ambiguous and codesign fails.
+  if security find-certificate -c "$name" "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1; then
     echo "$name"
     return
   fi

@@ -28,7 +28,12 @@ final class CoreTests: XCTestCase {
     }
 
     func testLiftPunchesAWeakBlue() {
-        XCTAssertEqual(lift(RGB(40, 80, 160)), RGB(13, 94, 255))
+        XCTAssertEqual(lift(RGB(40, 80, 160)), RGB(8, 90, 255))
+    }
+
+    func testLiftKeepsGrayOffWhite() {
+        XCTAssertEqual(lift(RGB(30, 30, 30)), RGB(75, 75, 75))
+        XCTAssertEqual(lift(RGB(4, 4, 4)), RGB(0, 0, 0))
     }
 
     func testLoginAndStream() {

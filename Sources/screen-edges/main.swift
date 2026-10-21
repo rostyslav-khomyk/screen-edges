@@ -53,6 +53,7 @@ final class Daemon: @unchecked Sendable {
         start(ws, websocket: true)
         start(tcp, websocket: false)
         fputs("Hyperion WebSocket \(config.websocketPort), JSON \(config.jsonPort)\n", stderr)
+        startHyperionDiscovery(websocketPort: config.websocketPort)
         while true {
             do {
                 try await waitForScreenRecording()
