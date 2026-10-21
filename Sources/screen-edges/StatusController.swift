@@ -192,11 +192,14 @@ final class StatusController: NSObject, ObservableObject {
     }
 
     private func push(_ colors: EdgeColors) async throws {
+        // Capture bitmap Y is inverted vs the physical screen (confirmed with the
+        // red/green/blue/yellow test pattern: screen bottom lit monitor zone 2).
+        // Swap top↔bottom here so mappings match what the user sees.
         let pairs: [(EdgeName, RGB)] = [
             (.left, colors.left),
-            (.top, colors.top),
+            (.top, colors.bottom),
             (.right, colors.right),
-            (.bottom, colors.bottom),
+            (.bottom, colors.top),
         ]
         // Serial updates — parallel turn_on races the localtuya zone painter.
         for (edge, rgb) in pairs {

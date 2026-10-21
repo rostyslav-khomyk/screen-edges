@@ -33,8 +33,6 @@ private func rgbBuffer(_ image: CGImage) -> FrameRGB {
     let width = image.width
     let height = image.height
     let bytesPerRow = width * 4
-    // SCScreenshotManager images are already top-left origin. Do not flip Y —
-    // flipping swapped top/bottom so the screen bottom drove monitor zone 2.
     var rgba = [UInt8](repeating: 0, count: bytesPerRow * height)
     rgba.withUnsafeMutableBytes { raw in
         if let ctx = CGContext(
@@ -46,6 +44,8 @@ private func rgbBuffer(_ image: CGImage) -> FrameRGB {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) {
+            ctx.translateBy(x: 0, y: CGFloat(height))
+            ctx.scaleBy(x: 1, y: -1)
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
     }
