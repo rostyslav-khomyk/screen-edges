@@ -33,8 +33,10 @@ private func rgbBuffer(_ image: CGImage) -> FrameRGB {
     let width = image.width
     let height = image.height
     let bytesPerRow = width * 4
-    var bgra = [UInt8](repeating: 0, count: bytesPerRow * height)
-    bgra.withUnsafeMutableBytes { raw in
+    // SCScreenshotManager images are already top-left origin. Do not flip Y —
+    // flipping swapped top/bottom so the screen bottom drove monitor zone 2.
+    var rgba = [UInt8](repeating: 0, count: bytesPerRow * height)
+    rgba.withUnsafeMutableBytes { raw in
         if let ctx = CGContext(
             data: raw.baseAddress,
             width: width,
@@ -44,18 +46,16 @@ private func rgbBuffer(_ image: CGImage) -> FrameRGB {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) {
-            ctx.translateBy(x: 0, y: CGFloat(height))
-            ctx.scaleBy(x: 1, y: -1)
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
     }
     var rgb = [UInt8](repeating: 0, count: width * height * 3)
     var j = 0
     var i = 0
-    while i + 2 < bgra.count && j + 2 < rgb.count {
-        rgb[j] = bgra[i]
-        rgb[j + 1] = bgra[i + 1]
-        rgb[j + 2] = bgra[i + 2]
+    while i + 2 < rgba.count && j + 2 < rgb.count {
+        rgb[j] = rgba[i]
+        rgb[j + 1] = rgba[i + 1]
+        rgb[j + 2] = rgba[i + 2]
         j += 3
         i += 4
     }
