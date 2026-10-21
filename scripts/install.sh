@@ -113,7 +113,7 @@ cat > "$PLIST" <<EOF
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <false/>
   <key>StandardErrorPath</key>
   <string>$APP_DIR/screen-edges.log</string>
   <key>StandardOutPath</key>

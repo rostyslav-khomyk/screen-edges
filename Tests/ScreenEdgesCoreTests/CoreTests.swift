@@ -1,7 +1,31 @@
 import XCTest
+import CoreGraphics
 @testable import ScreenEdgesCore
 
 final class CoreTests: XCTestCase {
+    func testCapturePreservesImageRows() throws {
+        let width = 20, height = 10
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                rgba[i] = y < height / 2 ? 255 : 0
+                rgba[i + 2] = y < height / 2 ? 0 : 255
+            }
+        }
+        let provider = CGDataProvider(data: Data(rgba) as CFData)!
+        let image = CGImage(width: width, height: height, bitsPerComponent: 8,
+                            bitsPerPixel: 32, bytesPerRow: width * 4,
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                            provider: provider, decode: nil, shouldInterpolate: false,
+                            intent: .defaultIntent)!
+        let frame = rgbBuffer(image)
+        let edges = sampleEdges(frame.bytes, width: width, height: height)
+        XCTAssertEqual(edges.top, RGB(255, 0, 0))
+        XCTAssertEqual(edges.bottom, RGB(0, 0, 255))
+    }
+
     func testTopRowIsTheTopEdge() {
         let width = 20
         let height = 10

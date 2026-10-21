@@ -29,7 +29,7 @@ public func captureEdgeFrame() async throws -> FrameRGB {
     return rgbBuffer(image)
 }
 
-private func rgbBuffer(_ image: CGImage) -> FrameRGB {
+func rgbBuffer(_ image: CGImage) -> FrameRGB {
     let width = image.width
     let height = image.height
     let bytesPerRow = width * 4
@@ -44,8 +44,6 @@ private func rgbBuffer(_ image: CGImage) -> FrameRGB {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) {
-            ctx.translateBy(x: 0, y: CGFloat(height))
-            ctx.scaleBy(x: 1, y: -1)
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
     }

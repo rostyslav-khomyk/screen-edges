@@ -102,16 +102,14 @@ final class StatusController: NSObject, ObservableObject {
 
     @objc private func quit() {
         Task {
-            // If sync is enabled, LaunchAgent will restart us — do not turn the
-            // strips off or a relaunch leaves everything dark until the next push.
+            // LaunchAgent KeepAlive is off — quit stays quit. Turn zones off so
+            // strips do not stick on the last frame.
             loopTask?.cancel()
             loopTask = nil
-            if !config.enabled {
-                for edge in EdgeName.allCases {
-                    let id = config.edges.entity(for: edge)
-                    if !id.isEmpty {
-                        try? await client.turnOff(entityId: id)
-                    }
+            for edge in EdgeName.allCases {
+                let id = config.edges.entity(for: edge)
+                if !id.isEmpty {
+                    try? await client.turnOff(entityId: id)
                 }
             }
             await client.disconnect()
@@ -189,13 +187,9 @@ final class StatusController: NSObject, ObservableObject {
         loopTask?.cancel()
         loopTask = nil
         statusText = "Paused"
-        // Turn mapped lights off so strips do not stick on last colour.
-        for edge in EdgeName.allCases {
-            let id = config.edges.entity(for: edge)
-            if !id.isEmpty {
-                try? await client.turnOff(entityId: id)
-            }
-        }
+        // Do not turn_off zone lights here. That TCP-powers the strips off; the
+        // next Start sync then races UDP negotiate vs re-power and often stays dark.
+        lastSent.removeAll()
         rebuildMenu()
     }
 
@@ -251,8 +245,9 @@ final class StatusController: NSObject, ObservableObject {
             let entityId = config.edges.entity(for: edge)
             guard !entityId.isEmpty else { continue }
             if lastSent[edge] == rgb { continue }
-            lastSent[edge] = rgb
+            try Task.checkCancellation()
             try await client.setLightRGB(entityId: entityId, rgb: rgb)
+            lastSent[edge] = rgb
         }
     }
 }

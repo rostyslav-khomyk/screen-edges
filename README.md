@@ -1,6 +1,6 @@
 # Screen Edges
 
-Menu-bar Mac app that samples the four edges of the widest display and drives **standard Home Assistant light entities** (Battletron zone lights from the localtuya fork).
+Menu-bar Mac app that samples the four edges of the widest display and drives **standard Home Assistant light entities** (Battletron zone lights from the [localtuya](https://github.com/rostyslav-khomyk/localtuya) fork).
 
 No Hyperion. Protocol is the native Home Assistant **REST** API (`POST /api/services/light/turn_on` with `rgb_color`). REST is used instead of the WebSocket so large `/api/states` replies do not hit “Message too long”.
 
@@ -28,6 +28,21 @@ Those zone lights are normal HA lights, so HomeKit (HomeBridge), Matterbridge, G
    - Save, then **Start screen sync**
 
 macOS will ask once for Screen Recording.
+
+### LaunchAgent
+
+`install.sh` installs a LaunchAgent with **`RunAtLoad`** (starts at login) and **`KeepAlive` false** (Quit stays quit; the agent does not relaunch the app).
+
+| Action | Behaviour |
+| --- | --- |
+| **Pause** sync | Stops capture; leaves zone lights as-is (no `turn_off`, so the next Start does not race strip re-power vs UDP). |
+| **Quit** | Turns mapped zone lights off, then exits. |
+
+## Capture notes
+
+ScreenCaptureKit frames are already top-left. The capture path does **not** flip Y when building the RGB buffer — an extra flip swapped top/bottom relative to the physical display. Edge → entity mapping is direct (left/top/right/bottom).
+
+Colours are pushed to HA **one edge at a time** so localtuya’s zone painter does not race parallel `turn_on` calls. `lastSent` is updated only after a successful push.
 
 ## Config file
 
