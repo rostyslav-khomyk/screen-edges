@@ -54,16 +54,40 @@ codesign --force --sign "$SIGN_ID" --identifier "com.rostyslavkhomyk.screen-edge
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
 CONFIG="$APP_DIR/config.json"
 if [[ ! -f "$CONFIG" ]]; then
-  TOKEN="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   cat > "$CONFIG" <<EOF
 {
-  "token": "$TOKEN",
-  "websocketPort": 8090,
-  "jsonPort": 19444,
-  "interval": 0.125
+  "ha_url": "http://192.168.2.5",
+  "ha_token": "",
+  "interval": 0.15,
+  "enabled": false,
+  "localtuya_only": true,
+  "edges": {
+    "left": "",
+    "top": "",
+    "right": "",
+    "bottom": ""
+  }
 }
 EOF
-  echo "New token: $TOKEN"
+  echo "Created $CONFIG — open Settings to add your HA token and map lights."
+elif python3 -c 'import json,sys; json.load(open(sys.argv[1]));' "$CONFIG" 2>/dev/null && \
+     ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if "ha_url" in d else 1)' "$CONFIG"; then
+  echo "Replacing obsolete Hyperion config at $CONFIG"
+  cat > "$CONFIG" <<EOF
+{
+  "ha_url": "http://192.168.2.5",
+  "ha_token": "",
+  "interval": 0.15,
+  "enabled": false,
+  "localtuya_only": true,
+  "edges": {
+    "left": "",
+    "top": "",
+    "right": "",
+    "bottom": ""
+  }
+}
+EOF
 else
   echo "Keeping existing $CONFIG"
 fi

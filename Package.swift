@@ -8,10 +8,20 @@ let package = Package(
         .executable(name: "screen-edges", targets: ["screen-edges"]),
     ],
     targets: [
-        .target(name: "ScreenEdgesCore"),
+        .target(
+            name: "ScreenEdgesCore",
+            linkerSettings: [
+                .linkedFramework("ScreenCaptureKit"),
+                .linkedFramework("CoreGraphics"),
+            ]
+        ),
         .executableTarget(
             name: "screen-edges",
-            dependencies: ["ScreenEdgesCore"]
+            dependencies: ["ScreenEdgesCore"],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI"),
+            ]
         ),
         .testTarget(
             name: "ScreenEdgesCoreTests",

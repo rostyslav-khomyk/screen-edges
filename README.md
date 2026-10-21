@@ -1,57 +1,58 @@
-# screen-edges
+# Screen Edges
 
-Mac screen-edge grabber. It publishes the left, top, right, and bottom colors of the widest display using the [Hyperion NG JSON API](https://api.hyperion-project.org/).
+Menu-bar Mac app that samples the four edges of the widest display and drives **standard Home Assistant light entities** (Battletron zone lights from the localtuya fork).
 
-Home Assistant, and the localtuya fork in this setup, connect as Hyperion clients. The token is a bearer secret. Several clients can subscribe at once, so two LED strips can follow the same screen.
+No Hyperion. Protocol is the native Home Assistant WebSocket API (`call_service` → `light.turn_on` with `rgb_color`).
 
-## LED order
+```
+Screen Edges  --HA WebSocket-->  light.zone_*  -->  localtuya UDP zones  -->  Battletron strip
+```
 
-| Index | Edge |
-| --- | --- |
-| 0 | left |
-| 1 | top |
-| 2 | right |
-| 3 | bottom |
+Those zone lights are normal HA lights, so HomeKit (HomeBridge), Matterbridge, Google Home, and scripts can use the same entities.
 
-`serverinfo` lists those names. After `ledcolors` / `ledstream-start`, updates arrive as `ledcolors-ledstream-update` about 8 times a second.
+## Setup
 
-## Ports
-
-- WebSocket `8090`. Send `{"command":"authorize","subcommand":"login","token":"<token>"}`.
-- Newline-delimited JSON on TCP `19444`, same commands. This is the classic Hyperion JSON port.
-
-## Install
-
-The service has to run in your logged-in session. Screen capture is not available to a root daemon.
+1. In Home Assistant, create a **long-lived access token** (profile → security).
+2. Ensure each Battletron strip has zones configured in localtuya (Add zone / length / edge). Each zone appears as a colour light on the device.
+3. Install this app:
 
 ```bash
 ./scripts/install.sh
-./scripts/uninstall.sh
 ```
 
-`install.sh` builds a release app at `/Applications/ScreenEdges.app`, writes `~/Library/Application Support/ScreenEdges/config.json` with a token, and loads a LaunchAgent for the logged-in session. The app is signed with a local certificate named Screen Edges Local, so later rebuilds keep the same permission.
+4. Open **Screen Edges → Settings…** from the menu bar:
+   - HA URL (e.g. `http://192.168.2.5`)
+   - Paste the access token
+   - **Connect & refresh lights**
+   - Map left / top / right / bottom to the matching zone lights
+   - Save, then **Start screen sync**
 
-macOS asks once for Screen & System Audio Recording. That is the screen-capture switch. Screen Edges does not record the microphone or system audio. Allow **Screen Edges** and the dialog stays closed. The color listeners keep running while you answer.
+macOS will ask once for Screen Recording.
 
-A package is optional:
+## Config file
 
-```bash
-./scripts/build-pkg.sh
+`~/Library/Application Support/ScreenEdges/config.json`
+
+```json
+{
+  "ha_url": "http://192.168.2.5",
+  "ha_token": "…",
+  "interval": 0.15,
+  "enabled": false,
+  "localtuya_only": true,
+  "edges": {
+    "left": "light.…_zone_1_…",
+    "top": "light.…_zone_2_…",
+    "right": "light.…_zone_3_…",
+    "bottom": "light.…_zone_1_…"
+  }
+}
 ```
 
-Install `ScreenEdges.pkg`, then run `/usr/local/share/screen-edges/install.sh` so the LaunchAgent and token are created for your user.
+Older Hyperion configs (`token`, `websocketPort`, `jsonPort`) are ignored; set the HA fields in Settings.
 
 ## Test
 
 ```bash
 swift test
-```
-
-## Check the stream
-
-```bash
-TOKEN=$(python3 -c 'import json; print(json.load(open("/Users/'"$USER"'/Library/Application Support/ScreenEdges/config.json"))["token"])')
-printf '%s\n' "{\"command\":\"authorize\",\"subcommand\":\"login\",\"token\":\"$TOKEN\",\"tan\":1}" \
-  '{"command":"ledcolors","subcommand":"ledstream-start","tan":2}' \
-  | nc 127.0.0.1 19444
 ```

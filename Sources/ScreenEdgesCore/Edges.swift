@@ -23,7 +23,7 @@ public struct EdgeColors: Equatable, Sendable {
         self.bottom = bottom
     }
 
-    /// Hyperion LED order. Index 0 is the left edge.
+    /// Edge order used when mapping to HA lights: left, top, right, bottom.
     public var leds: [RGB] { [left, top, right, bottom] }
 }
 

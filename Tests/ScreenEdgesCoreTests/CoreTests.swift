@@ -36,30 +36,17 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(lift(RGB(4, 4, 4)), RGB(0, 0, 0))
     }
 
-    func testLoginAndStream() {
-        let session = HyperionSession(token: "test-token")
-        let denied = session.handle(#"{"command":"serverinfo","tan":1}"#)
-        XCTAssertTrue(denied?.json.contains("No authorization") == true)
-
-        let login = session.handle(#"{"command":"authorize","subcommand":"login","token":"test-token","tan":2}"#)
-        XCTAssertTrue(login?.json.contains("\"success\":true") == true)
-        XCTAssertTrue(session.authorized)
-
-        let info = session.handle(#"{"command":"serverinfo","subcommand":"getInfo","tan":3}"#)
-        XCTAssertTrue(info?.json.contains("\"name\":\"left\"") == true)
-        XCTAssertTrue(info?.json.contains("\"name\":\"bottom\"") == true)
-
-        XCTAssertNil(session.streamUpdate(EdgeColors(left: RGB(1, 0, 0), top: RGB(0, 1, 0), right: RGB(0, 0, 1), bottom: RGB(1, 1, 0))))
-        _ = session.handle(#"{"command":"ledcolors","subcommand":"ledstream-start","tan":4}"#)
-        XCTAssertTrue(session.streaming)
-        let update = session.streamUpdate(EdgeColors(left: RGB(9, 0, 0), top: RGB(0, 8, 0), right: RGB(0, 0, 7), bottom: RGB(1, 1, 1)))
-        XCTAssertTrue(update?.contains("ledcolors-ledstream-update") == true)
-        XCTAssertTrue(update?.contains("[9,0,0]") == true)
-    }
-
-    func testBadTokenDoesNotAuthorize() {
-        let session = HyperionSession(token: "secret")
-        _ = session.handle(#"{"command":"authorize","subcommand":"login","token":"nope","tan":1}"#)
-        XCTAssertFalse(session.authorized)
+    func testAppConfigRoundTrip() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("screen-edges-test.json")
+        var config = AppConfig(haURL: "http://192.168.2.5", haToken: "secret", enabled: true)
+        config.edges.left = "light.monitor_zone_1"
+        config.edges.bottom = "light.desk_zone_1"
+        try config.save(to: url)
+        let loaded = try AppConfig.load(from: url)
+        XCTAssertEqual(loaded.haURL, "http://192.168.2.5")
+        XCTAssertEqual(loaded.haToken, "secret")
+        XCTAssertEqual(loaded.edges.left, "light.monitor_zone_1")
+        XCTAssertEqual(loaded.edges.bottom, "light.desk_zone_1")
+        try? FileManager.default.removeItem(at: url)
     }
 }
