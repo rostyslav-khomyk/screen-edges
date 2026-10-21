@@ -198,17 +198,13 @@ final class StatusController: NSObject, ObservableObject {
             (.right, colors.right),
             (.bottom, colors.bottom),
         ]
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for (edge, rgb) in pairs {
-                let entityId = config.edges.entity(for: edge)
-                guard !entityId.isEmpty else { continue }
-                if lastSent[edge] == rgb { continue }
-                lastSent[edge] = rgb
-                group.addTask {
-                    try await self.client.setLightRGB(entityId: entityId, rgb: rgb)
-                }
-            }
-            try await group.waitForAll()
+        // Serial updates — parallel turn_on races the localtuya zone painter.
+        for (edge, rgb) in pairs {
+            let entityId = config.edges.entity(for: edge)
+            guard !entityId.isEmpty else { continue }
+            if lastSent[edge] == rgb { continue }
+            lastSent[edge] = rgb
+            try await client.setLightRGB(entityId: entityId, rgb: rgb)
         }
     }
 }
