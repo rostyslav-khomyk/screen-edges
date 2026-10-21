@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "screen-edges", targets: ["screen-edges"]),
+        .executable(name: "screen-edges-stream-fixture", targets: ["StreamFixture"]),
     ],
     targets: [
         .target(
@@ -27,5 +28,6 @@ let package = Package(
             name: "ScreenEdgesCoreTests",
             dependencies: ["ScreenEdgesCore"]
         ),
+        .executableTarget(name: "StreamFixture", dependencies: ["ScreenEdgesCore"], path: "Tests/StreamFixture"),
     ]
 )

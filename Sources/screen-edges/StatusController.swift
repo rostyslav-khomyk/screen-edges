@@ -8,10 +8,10 @@ final class StatusController: NSObject, ObservableObject {
     private var settingsWindow: NSWindow?
     private let client = HomeAssistantClient()
     private var loopTask: Task<Void, Never>?
-    private var lastSent: [EdgeName: RGB] = [:]
+    private var generation = 0
 
     @Published var config: AppConfig
-    @Published var lights: [HALight] = []
+    @Published var zones: [HASyncZone] = []
     @Published var statusText = "Idle"
     @Published var lastError: String?
 
@@ -30,8 +30,8 @@ final class StatusController: NSObject, ObservableObject {
             button.image = NSImage(systemSymbolName: "light.max", accessibilityDescription: "Screen Edges")
             button.image?.isTemplate = true
         }
-        rebuildMenu()
-        fileLog("Screen Edges starting (HA REST → zone lights)")
+        save()
+        fileLog("Screen Edges starting (Hyperion granular stream → HA)")
         Task { await bootstrap() }
     }
 
@@ -102,16 +102,7 @@ final class StatusController: NSObject, ObservableObject {
 
     @objc private func quit() {
         Task {
-            // LaunchAgent KeepAlive is off — quit stays quit. Turn zones off so
-            // strips do not stick on the last frame.
-            loopTask?.cancel()
-            loopTask = nil
-            for edge in EdgeName.allCases {
-                let id = config.edges.entity(for: edge)
-                if !id.isEmpty {
-                    try? await client.turnOff(entityId: id)
-                }
-            }
+            await stopLoop()
             await client.disconnect()
             NSApp.terminate(nil)
         }
@@ -138,35 +129,37 @@ final class StatusController: NSObject, ObservableObject {
         lastError = nil
         do {
             try await client.connect(urlString: config.haURL, token: token)
-            lights = try await client.listLights(localtuyaOnly: config.localtuyaOnly)
-            statusText = "Connected — \(lights.count) lights"
+            zones = try await client.syncLayout().zones
+            statusText = "Connected — \(zones.count) zones"
             lastError = nil
-            fileLog("Connected to \(config.haURL) — \(lights.count) lights, enabled=\(config.enabled)")
+            fileLog("Connected to \(config.haURL) — \(zones.count) zones, enabled=\(config.enabled)")
             if config.enabled {
                 await startLoop()
             }
         } catch {
             statusText = "Connection failed"
             lastError = error.localizedDescription
-            lights = []
+            zones = []
             fileLog("Connection failed: \(error.localizedDescription)")
+            if config.enabled { await startLoop() }
         }
     }
 
     func reconnect() async {
+        await stopLoop()
         await client.disconnect()
         await bootstrap()
     }
 
-    func refreshLights() async {
+    func refreshZones() async {
         let token = config.haToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { return }
         do {
             if await !client.isConnected {
                 try await client.connect(urlString: config.haURL, token: token)
             }
-            lights = try await client.listLights(localtuyaOnly: config.localtuyaOnly)
-            statusText = "Connected — \(lights.count) lights"
+            zones = try await client.syncLayout().zones
+            statusText = "Connected — \(zones.count) zones"
             lastError = nil
         } catch {
             statusText = "Connection failed"
@@ -175,79 +168,95 @@ final class StatusController: NSObject, ObservableObject {
     }
 
     private func startLoop() async {
-        loopTask?.cancel()
-        lastSent.removeAll()
-        loopTask = Task { await runCaptureLoop() }
-        statusText = "Syncing"
-        fileLog("Sync loop started")
+        generation += 1
+        let current = generation
+        let previous = loopTask
+        previous?.cancel()
+        let settings = config
+        loopTask = Task {
+            await previous?.value
+            guard !Task.isCancelled, generation == current, settings.enabled else { return }
+            await runCaptureLoop(settings)
+        }
+        statusText = "Starting sync…"
         rebuildMenu()
     }
 
     private func stopLoop() async {
-        loopTask?.cancel()
+        generation += 1
+        let current = generation
+        let previous = loopTask
+        previous?.cancel()
+        await previous?.value
+        guard generation == current else { return }
         loopTask = nil
         statusText = "Paused"
-        // Do not turn_off zone lights here. That TCP-powers the strips off; the
-        // next Start sync then races UDP negotiate vs re-power and often stays dark.
-        lastSent.removeAll()
         rebuildMenu()
     }
 
-    private func runCaptureLoop() async {
+    private func runCaptureLoop(_ settings: AppConfig) async {
+        guard !settings.mappings.isEmpty else {
+            statusText = "Choose at least one zone"
+            return
+        }
+        guard Set(settings.mappings.map(\.entityId)).count == settings.mappings.count,
+              settings.interval.isFinite, settings.interval > 0,
+              (1024...65535).contains(settings.streamPort) else {
+            statusText = "Invalid sync settings"
+            return
+        }
         if !CGPreflightScreenCaptureAccess() {
-            fileLog("Screen Recording permission missing — requesting")
             _ = CGRequestScreenCaptureAccess()
-            if !CGPreflightScreenCaptureAccess() {
+            guard CGPreflightScreenCaptureAccess() else {
                 statusText = "Allow Screen Recording"
-                lastError = "System Settings → Privacy → Screen Recording → enable Screen Edges, then Start sync again"
-                fileLog(lastError!)
+                lastError = "Enable Screen Edges in System Settings → Privacy → Screen Recording"
+                return
             }
         }
-        var pushes = 0
-        while !Task.isCancelled {
-            guard config.enabled else { break }
-            do {
-                if await !client.isConnected {
-                    try await client.connect(urlString: config.haURL, token: config.haToken)
+        let server = HyperionServer(token: settings.streamToken)
+        do {
+            let port = try await server.start(port: settings.streamPort)
+            var nextCheck = Date.distantPast
+            var claimed = false
+            var loggedError: String?
+            while !Task.isCancelled {
+                do {
+                    let frame = try await captureEdgeFrame()
+                    try Task.checkCancellation()
+                    server.publish(sampleGranularEdges(frame.bytes, width: frame.width, height: frame.height))
+                    if Date() >= nextCheck {
+                        let layout = try await client.syncLayout()
+                        zones = layout.zones
+                        if !claimed || !layout.owners.contains(settings.ownerID) {
+                            try await client.startStream(config: settings, port: port)
+                            claimed = true
+                            fileLog("Granular sync acquired (\(settings.mappings.count) zones)")
+                        }
+                        nextCheck = Date().addingTimeInterval(2)
+                    }
+                    statusText = "Syncing — granular colors"
+                    lastError = nil
+                    loggedError = nil
+                    try await Task.sleep(for: .seconds(max(0.1, min(settings.interval, 2))))
+                } catch {
+                    if Task.isCancelled { break }
+                    statusText = "Reconnecting…"
+                    lastError = error.localizedDescription
+                    if loggedError != lastError {
+                        fileLog("Sync error: \(error.localizedDescription)")
+                        loggedError = lastError
+                    }
+                    claimed = false
+                    try? await Task.sleep(for: .seconds(2))
                 }
-                let frame = try await captureEdgeFrame()
-                let colors = sampleEdges(frame.bytes, width: frame.width, height: frame.height)
-                try await push(colors)
-                pushes += 1
-                if pushes == 1 || pushes % 40 == 0 {
-                    fileLog(
-                        "push #\(pushes) L=\(colors.left) T=\(colors.top) R=\(colors.right) B=\(colors.bottom)"
-                    )
-                }
-                statusText = "Syncing"
-                lastError = nil
-            } catch {
-                lastError = error.localizedDescription
-                statusText = "Error"
-                fileLog("sync error: \(error.localizedDescription)")
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
-            let interval = max(0.08, config.interval)
-            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+        } catch {
+            statusText = "Stream server failed"
+            lastError = error.localizedDescription
+            fileLog("Stream server failed: \(error.localizedDescription)")
         }
-    }
-
-    private func push(_ colors: EdgeColors) async throws {
-        // Monitor L/T/R already match the screen with direct mapping.
-        let pairs: [(EdgeName, RGB)] = [
-            (.left, colors.left),
-            (.top, colors.top),
-            (.right, colors.right),
-            (.bottom, colors.bottom),
-        ]
-        // Serial updates — parallel turn_on races the localtuya zone painter.
-        for (edge, rgb) in pairs {
-            let entityId = config.edges.entity(for: edge)
-            guard !entityId.isEmpty else { continue }
-            if lastSent[edge] == rgb { continue }
-            try Task.checkCancellation()
-            try await client.setLightRGB(entityId: entityId, rgb: rgb)
-            lastSent[edge] = rgb
-        }
+        server.stop()
+        try? await client.stopStream(owner: settings.ownerID)
+        fileLog("Granular sync released")
     }
 }

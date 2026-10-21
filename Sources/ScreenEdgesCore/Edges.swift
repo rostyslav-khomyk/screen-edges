@@ -27,8 +27,41 @@ public struct EdgeColors: Equatable, Sendable {
     public var leds: [RGB] { [left, top, right, bottom] }
 }
 
-public enum EdgeName: String, CaseIterable, Sendable {
+public enum EdgeName: String, CaseIterable, Codable, Sendable {
     case left, top, right, bottom
+}
+
+/// Canonical Hyperion order: L/T/R/B, 20 samples each. Vertical edges run top
+/// to bottom; horizontal edges run left to right, independently of strip wiring.
+public func sampleGranularEdges(_ rgb: [UInt8], width: Int, height: Int) -> [RGB] {
+    guard width > 0, height > 0, rgb.count == width * height * 3 else { return [] }
+    let bandX = min(width, max(1, Int((Double(width) * 0.08).rounded())))
+    let bandY = min(height, max(1, Int((Double(height) * 0.12).rounded())))
+    func average(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> RGB {
+        var sum = [0, 0, 0]
+        for y in y0..<y1 {
+            for x in x0..<x1 {
+                let offset = (y * width + x) * 3
+                for c in 0..<3 { sum[c] += Int(rgb[offset + c]) }
+            }
+        }
+        let count = max(1, (x1 - x0) * (y1 - y0))
+        return lift(RGB(sum[0] / count, sum[1] / count, sum[2] / count))
+    }
+    return EdgeName.allCases.flatMap { edge in
+        (0..<20).map { index in
+            let vertical = edge == .left || edge == .right
+            let length = vertical ? height : width
+            let start = min(length - 1, index * length / 20)
+            let end = min(length, max(start + 1, (index + 1) * length / 20))
+            switch edge {
+            case .left: return average(0, start, bandX, end)
+            case .top: return average(start, 0, end, bandY)
+            case .right: return average(width - bandX, start, width, end)
+            case .bottom: return average(start, height - bandY, end, height)
+            }
+        }
+    }
 }
 
 /// Row 0 of `rgb` is the top of the screen. `rgb` is packed RGB, 3 bytes per pixel.

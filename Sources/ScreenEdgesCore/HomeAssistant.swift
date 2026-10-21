@@ -1,15 +1,24 @@
 import Foundation
 
-public struct HALight: Equatable, Sendable, Identifiable {
+public struct HASyncZone: Codable, Sendable, Identifiable {
+    public let entityId: String
+    public let name: String
+    public let deviceName: String
+    public let cm: Int
+    public let sections: Int
     public var id: String { entityId }
-    public var entityId: String
-    public var name: String
-    public var platform: String?
+    enum CodingKeys: String, CodingKey {
+        case entityId = "entity_id", deviceName = "device_name", name, cm, sections
+    }
+}
 
-    public init(entityId: String, name: String, platform: String? = nil) {
-        self.entityId = entityId
-        self.name = name
-        self.platform = platform
+public struct HASyncLayout: Codable, Sendable {
+    public let protocolVersion: Int
+    public let samplesPerEdge: Int
+    public let zones: [HASyncZone]
+    public let owners: [String]
+    enum CodingKeys: String, CodingKey {
+        case protocolVersion = "protocol_version", samplesPerEdge = "samples_per_edge", zones, owners
     }
 }
 
@@ -72,43 +81,23 @@ public actor HomeAssistantClient {
         token = ""
     }
 
-    public func listLights(localtuyaOnly: Bool) async throws -> [HALight] {
-        let data = try await get(path: "/api/states")
-        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw HAClientError.unexpected("states JSON")
+    public func syncLayout() async throws -> HASyncLayout {
+        let layout = try JSONDecoder().decode(HASyncLayout.self, from: await get(path: "/api/localtuya/screen_sync"))
+        guard layout.protocolVersion == 1, layout.samplesPerEdge == 20 else {
+            throw HAClientError.unexpected("Incompatible LocalTuya screen-sync version")
         }
-        var lights: [HALight] = []
-        for row in rows {
-            guard let entityId = row["entity_id"] as? String, entityId.hasPrefix("light.") else { continue }
-            let attrs = row["attributes"] as? [String: Any] ?? [:]
-            let name = (attrs["friendly_name"] as? String) ?? entityId
-            if localtuyaOnly {
-                // Battletron zone lights from localtuya use "_zone_" in the entity id.
-                let ok = entityId.contains("_zone_")
-                    || entityId.contains("battletron")
-                    || name.localizedCaseInsensitiveContains("zone")
-                if !ok { continue }
-            }
-            lights.append(HALight(entityId: entityId, name: name))
-        }
-        return lights.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return layout
     }
 
-    public func setLightRGB(entityId: String, rgb: RGB) async throws {
-        guard !entityId.isEmpty else { return }
-        try await post(
-            path: "/api/services/light/turn_on",
-            body: [
-                "entity_id": entityId,
-                "rgb_color": [rgb.r, rgb.g, rgb.b],
-                "brightness": max(rgb.r, rgb.g, rgb.b, 1),
-            ]
-        )
+    public func startStream(config: AppConfig, port: UInt16) async throws {
+        try await post(path: "/api/localtuya/screen_sync", body: [
+            "action": "start", "owner": config.ownerID, "port": Int(port), "token": config.streamToken,
+            "mappings": config.mappings.map { ["entity_id": $0.entityId, "edge": $0.edge.rawValue, "reverse": $0.reverse] as [String: Any] },
+        ])
     }
 
-    public func turnOff(entityId: String) async throws {
-        guard !entityId.isEmpty else { return }
-        try await post(path: "/api/services/light/turn_off", body: ["entity_id": entityId])
+    public func stopStream(owner: String) async throws {
+        try await post(path: "/api/localtuya/screen_sync", body: ["action": "stop", "owner": owner])
     }
 
     private func get(path: String) async throws -> Data {

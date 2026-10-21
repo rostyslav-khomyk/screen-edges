@@ -1,5 +1,18 @@
 import Foundation
 
+public struct ZoneMapping: Codable, Equatable, Sendable, Identifiable {
+    public var entityId: String
+    public var edge: EdgeName
+    public var reverse: Bool
+    public var id: String { entityId }
+
+    public init(entityId: String, edge: EdgeName, reverse: Bool = false) {
+        self.entityId = entityId; self.edge = edge; self.reverse = reverse
+    }
+
+    enum CodingKeys: String, CodingKey { case entityId = "entity_id", edge, reverse }
+}
+
 public struct EdgeMapping: Codable, Equatable, Sendable {
     public var left: String
     public var top: String
@@ -40,6 +53,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var edges: EdgeMapping
     /// When true, only offer lights whose entity_id or name suggests localtuya zones.
     public var localtuyaOnly: Bool
+    public var mappings: [ZoneMapping]
+    public var streamPort: Int
+    public var streamToken: String
+    public var ownerID: String
 
     public init(
         haURL: String = "http://192.168.2.5",
@@ -47,7 +64,11 @@ public struct AppConfig: Codable, Equatable, Sendable {
         interval: Double = 0.15,
         enabled: Bool = false,
         edges: EdgeMapping = EdgeMapping(),
-        localtuyaOnly: Bool = true
+        localtuyaOnly: Bool = true,
+        mappings: [ZoneMapping]? = nil,
+        streamPort: Int = 8090,
+        streamToken: String = UUID().uuidString,
+        ownerID: String = UUID().uuidString
     ) {
         self.haURL = haURL
         self.haToken = haToken
@@ -55,6 +76,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         self.enabled = enabled
         self.edges = edges
         self.localtuyaOnly = localtuyaOnly
+        self.mappings = mappings ?? Self.migrate(edges)
+        self.streamPort = streamPort
+        self.streamToken = streamToken
+        self.ownerID = ownerID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -62,6 +87,30 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case haToken = "ha_token"
         case interval, enabled, edges
         case localtuyaOnly = "localtuya_only"
+        case mappings, streamPort = "stream_port", streamToken = "stream_token", ownerID = "owner_id"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        haURL = try c.decode(String.self, forKey: .haURL)
+        haToken = try c.decode(String.self, forKey: .haToken)
+        interval = try c.decodeIfPresent(Double.self, forKey: .interval) ?? 0.15
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        edges = try c.decodeIfPresent(EdgeMapping.self, forKey: .edges) ?? EdgeMapping()
+        localtuyaOnly = try c.decodeIfPresent(Bool.self, forKey: .localtuyaOnly) ?? true
+        mappings = try c.decodeIfPresent([ZoneMapping].self, forKey: .mappings) ?? Self.migrate(edges)
+        streamPort = try c.decodeIfPresent(Int.self, forKey: .streamPort) ?? 8090
+        streamToken = try c.decodeIfPresent(String.self, forKey: .streamToken) ?? UUID().uuidString
+        ownerID = try c.decodeIfPresent(String.self, forKey: .ownerID) ?? UUID().uuidString
+    }
+
+    private static func migrate(_ edges: EdgeMapping) -> [ZoneMapping] {
+        var seen = Set<String>()
+        return EdgeName.allCases.compactMap { edge in
+            let id = edges.entity(for: edge)
+            guard !id.isEmpty, seen.insert(id).inserted else { return nil }
+            return ZoneMapping(entityId: id, edge: edge)
+        }
     }
 
     public static func defaultURL() -> URL {
@@ -82,5 +131,6 @@ public struct AppConfig: Codable, Equatable, Sendable {
         )
         let data = try JSONEncoder().encode(self)
         try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }

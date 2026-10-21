@@ -1,73 +1,41 @@
 # Screen Edges
 
-Menu-bar Mac app that samples the four edges of the widest display and drives **standard Home Assistant light entities** (Battletron zone lights from the [localtuya](https://github.com/rostyslav-khomyk/localtuya) fork).
-
-No Hyperion. Protocol is the native Home Assistant **REST** API (`POST /api/services/light/turn_on` with `rgb_color`). REST is used instead of the WebSocket so large `/api/states` replies do not hit “Message too long”.
+A menu-bar Mac app that samples the full four edges of the widest display and streams spatial colors to the Battletron zones in the [LocalTuya fork](https://github.com/rostyslav-khomyk/localtuya). Requires LocalTuya 2026.10.2 and HA Core 2026.10.2 or newer. The release candidate is tested against HA 2026.10.2.
 
 ```
-Screen Edges  --HA REST-->  light.zone_*  -->  localtuya UDP zones  -->  Battletron strip
+Screen capture → 80 samples → authenticated Hyperion WebSocket → HA mapping
+                                                              ↓
+HA zone lights ──────────────────────────────────── shared UDP painter → strips
 ```
 
-Those zone lights are normal HA lights, so HomeKit (HomeBridge), Matterbridge, Google Home, and scripts can use the same entities.
+The app serves the authenticated Hyperion JSON LED-stream subset, with 20 samples per edge in left/top/right/bottom order. HA pulls those frames and resamples them into the **20 logical sections per strip** verified with the hardware tests. These are spatial groups, not individually addressable visible emitters. Manual HA lights and screen streaming share the existing unicast UDP engine.
 
 ## Setup
 
-1. In Home Assistant, create a **long-lived access token** (profile → security).
-2. Ensure each Battletron strip has zones configured in localtuya (Add zone / length / edge). Each zone appears as a colour light on the device.
-3. Install this app:
+1. Configure Battletron zones and their physical lengths in LocalTuya. Both strips must belong to the same LocalTuya integration entry.
+2. Use an administrator's HA long-lived access token (profile → security).
+3. Install the validated app bundle. For a development checkout, `./scripts/install.sh` builds and installs the app and LaunchAgent; this changes the running app. Do not use the old `build-pkg.sh` package for this release.
+4. Open **Screen Edges → Settings…**, enter the direct LAN HA URL and token, then connect. HA must be able to connect back to the Mac on the stream port (default 8090). A reverse proxy or remote HA URL can hide the Mac's source address; use the direct LAN connection.
+5. Each HA zone has its own edge selector and **Reverse** toggle. Multiple zones and strips can use the same edge. Unmapped sections on a participating strip are black.
+6. Save, grant Screen Recording when macOS asks, then start sync.
 
-```bash
-./scripts/install.sh
-```
+Zone order follows the controller end of the strip. Left/right edge samples run top to bottom; top/bottom samples run left to right. Reverse each destination as necessary for physical wiring. The inset monitor strip's 27/57/27 cm lengths allocate 5/10/5 sections; each section set samples the **full** corresponding screen edge. Physical strip dimensions do not crop the screen.
 
-4. Open **Screen Edges → Settings…** from the menu bar:
-   - HA URL (e.g. `http://192.168.2.5`)
-   - Paste the access token
-   - **Connect & refresh lights**
-   - Map left / top / right / bottom to the matching zone lights
-   - Save, then **Start screen sync**
+The desk can keep its existing single bottom zone until the actual 1d/2d/3d lengths are measured. Then map them to left/bottom/right. Use the monitor's actual approximately 81 cm screen span for placement, rather than the inset 57 cm top strip run.
 
-macOS will ask once for Screen Recording.
+## Ownership and recovery
 
-### LaunchAgent
+Starting sync acquires the selected strips only after HA receives a valid frame. Zone entities stay registered and keep their saved colors, brightness and on/off state. Manual changes to a participating strip return “Screen sync is active”; pause before changing its lights or zone layout.
 
-`install.sh` installs a LaunchAgent with **`RunAtLoad`** (starts at login) and **`KeepAlive` false** (Quit stays quit; the agent does not relaunch the app).
+Pause and Quit release ownership and restore manual output, including zones previously off. A disconnected source, malformed frame, or five seconds without a valid frame also releases ownership. The app retries after HA becomes available again. An integration unload stops the painter without briefly restoring output into closing devices.
 
-| Action | Behaviour |
-| --- | --- |
-| **Pause** sync | Stops capture; leaves zone lights as-is (no `turn_off`, so the next Start does not race strip re-power vs UDP). |
-| **Quit** | Turns mapped zone lights off, then exits. |
+The LaunchAgent starts at login; Quit stays quit. The config remains at `~/Library/Application Support/ScreenEdges/config.json`, is saved with owner-only permissions, and migrates existing `edges` mappings automatically. New `mappings` support repeated edges and per-zone reversal. Never distribute this file: it contains access tokens.
 
-## Capture notes
-
-ScreenCaptureKit frames are already top-left. The capture path does **not** flip Y when building the RGB buffer — an extra flip swapped top/bottom relative to the physical display. Edge → entity mapping is direct (left/top/right/bottom).
-
-Colours are pushed to HA **one edge at a time** so localtuya’s zone painter does not race parallel `turn_on` calls. `lastSent` is updated only after a successful push.
-
-## Config file
-
-`~/Library/Application Support/ScreenEdges/config.json`
-
-```json
-{
-  "ha_url": "http://192.168.2.5",
-  "ha_token": "…",
-  "interval": 0.15,
-  "enabled": false,
-  "localtuya_only": true,
-  "edges": {
-    "left": "light.…_zone_1_…",
-    "top": "light.…_zone_2_…",
-    "right": "light.…_zone_3_…",
-    "bottom": "light.…_zone_1_…"
-  }
-}
-```
-
-Older Hyperion configs (`token`, `websocketPort`, `jsonPort`) are ignored; set the HA fields in Settings.
-
-## Test
+## Local validation
 
 ```bash
 swift test
+swift build -c release
 ```
+
+`screen-edges-stream-fixture` runs the production WebSocket server with deterministic colors, without capturing a screen or sending UDP. The LocalTuya tests use it with a real isolated HA HTTP/auth server and a recorded output engine. See LocalTuya's `docs/GRANULAR_SYNC_IMPLEMENTATION.md` for the cross-language tests and deployment gate.
