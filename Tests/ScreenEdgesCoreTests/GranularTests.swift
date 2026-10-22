@@ -94,4 +94,14 @@ final class GranularTests: XCTestCase {
         XCTAssertEqual(leds.first, [0, 0, 255])
         XCTAssertEqual(leds.last, [79, 0, 176])
     }
+    func testMasterGateHonorsSelectedZonesAndLegacyLayouts() throws {
+        let data = Data(#"{"protocol_version":1,"samples_per_edge":20,"owners":[],"zones":[{"entity_id":"light.monitor","name":"Monitor","device_name":"Strip","cm":110,"sections":20,"output_enabled":false},{"entity_id":"light.desk","name":"Desk","device_name":"Strip","cm":300,"sections":20}]}"#.utf8)
+        let layout = try JSONDecoder().decode(HASyncLayout.self, from: data)
+        XCTAssertFalse(layout.outputEnabled(for: [ZoneMapping(entityId: "light.monitor", edge: .top)]))
+        XCTAssertTrue(layout.outputEnabled(for: [ZoneMapping(entityId: "light.desk", edge: .bottom)]))
+        XCTAssertFalse(layout.outputEnabled(for: [ZoneMapping(entityId: "light.monitor", edge: .top), ZoneMapping(entityId: "light.desk", edge: .bottom)]))
+        let enabled = Data(String(decoding: data, as: UTF8.self).replacingOccurrences(of: "false", with: "true").utf8)
+        XCTAssertTrue(try JSONDecoder().decode(HASyncLayout.self, from: enabled).outputEnabled(for: [ZoneMapping(entityId: "light.monitor", edge: .top)]))
+    }
+
 }

@@ -6,9 +6,10 @@ public struct HASyncZone: Codable, Sendable, Identifiable {
     public let deviceName: String
     public let cm: Int
     public let sections: Int
+    public let outputEnabled: Bool?
     public var id: String { entityId }
     enum CodingKeys: String, CodingKey {
-        case entityId = "entity_id", deviceName = "device_name", name, cm, sections
+        case entityId = "entity_id", deviceName = "device_name", name, cm, sections, outputEnabled = "output_enabled"
     }
 }
 
@@ -17,6 +18,11 @@ public struct HASyncLayout: Codable, Sendable {
     public let samplesPerEdge: Int
     public let zones: [HASyncZone]
     public let owners: [String]
+    public func outputEnabled(for mappings: [ZoneMapping]) -> Bool {
+        let selected = Set(mappings.map(\.entityId))
+        return zones.filter { selected.contains($0.entityId) }.allSatisfy { $0.outputEnabled != false }
+    }
+
     enum CodingKeys: String, CodingKey {
         case protocolVersion = "protocol_version", samplesPerEdge = "samples_per_edge", zones, owners
     }

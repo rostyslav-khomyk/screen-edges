@@ -1,6 +1,6 @@
 # Screen Edges
 
-A menu-bar Mac app that samples the full four edges of the widest display and streams spatial colors to the Battletron zones in the [LocalTuya fork](https://github.com/rostyslav-khomyk/localtuya). Requires LocalTuya 2026.10.2 and HA Core 2026.10.2 or newer. The release candidate is tested against HA 2026.10.2.
+A menu-bar Mac app that samples the full four edges of the widest display and streams spatial colors to the Battletron zones in the [LocalTuya fork](https://github.com/rostyslav-khomyk/localtuya). Requires LocalTuya 2026.10.3 and HA Core 2026.10.2 or newer. The release candidate is tested against HA 2026.10.2.
 
 ```
 Screen capture → 80 samples → authenticated Hyperion WebSocket → HA mapping
@@ -39,3 +39,7 @@ swift build -c release
 ```
 
 `screen-edges-stream-fixture` runs the production WebSocket server with deterministic colors, without capturing a screen or sending UDP. The LocalTuya tests use it with a real isolated HA HTTP/auth server and a recorded output engine. See LocalTuya's `docs/GRANULAR_SYNC_IMPLEMENTATION.md` for the cross-language tests and deployment gate.
+
+## HA master output
+
+The native **ScreenEdges lighting** switch in HA overrides both strips. When off, the app shows **Suspended by Home Assistant** and waits. It resumes a fresh screen stream when that master turns on, provided Start sync remains enabled in the app. Pause and Quit remain independent user choices. Zone colors and brightness are retained while the master is off; the neon On automation can prepare its cyan manual scene before enabling output. This control does not depend on Mac sleep.

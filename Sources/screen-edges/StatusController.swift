@@ -218,21 +218,36 @@ final class StatusController: NSObject, ObservableObject {
             let port = try await server.start(port: settings.streamPort)
             var nextCheck = Date.distantPast
             var claimed = false
+            var needsClaim = true
+            var outputEnabled = true
             var loggedError: String?
             while !Task.isCancelled {
                 do {
-                    let frame = try await captureEdgeFrame()
-                    try Task.checkCancellation()
-                    server.publish(sampleGranularEdges(frame.bytes, width: frame.width, height: frame.height))
                     if Date() >= nextCheck {
                         let layout = try await client.syncLayout()
                         zones = layout.zones
-                        if !claimed || !layout.owners.contains(settings.ownerID) {
-                            try await client.startStream(config: settings, port: port)
-                            claimed = true
-                            fileLog("Granular sync acquired (\(settings.mappings.count) zones)")
-                        }
+                        outputEnabled = layout.outputEnabled(for: settings.mappings)
+                        needsClaim = !claimed || !layout.owners.contains(settings.ownerID)
                         nextCheck = Date().addingTimeInterval(2)
+                    }
+                    if !outputEnabled {
+                        claimed = false
+                        if statusText != "Suspended by Home Assistant" {
+                            fileLog("Suspended by Home Assistant")
+                        }
+                        statusText = "Suspended by Home Assistant"
+                        lastError = nil
+                        try await Task.sleep(for: .seconds(2))
+                        continue
+                    }
+                    let frame = try await captureEdgeFrame()
+                    try Task.checkCancellation()
+                    server.publish(sampleGranularEdges(frame.bytes, width: frame.width, height: frame.height))
+                    if needsClaim {
+                        try await client.startStream(config: settings, port: port)
+                        claimed = true
+                        needsClaim = false
+                        fileLog("Granular sync acquired (\(settings.mappings.count) zones)")
                     }
                     statusText = "Syncing — granular colors"
                     lastError = nil
@@ -247,6 +262,8 @@ final class StatusController: NSObject, ObservableObject {
                         loggedError = lastError
                     }
                     claimed = false
+                    needsClaim = true
+                    nextCheck = .distantPast
                     try? await Task.sleep(for: .seconds(2))
                 }
             }
